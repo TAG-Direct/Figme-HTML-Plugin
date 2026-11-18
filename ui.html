@@ -1,0 +1,1808 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: var(--figma-color-bg, #fff);
+    --bg2: var(--figma-color-bg-secondary, #f5f5f5);
+    --text: var(--figma-color-text, #1e1e1e);
+    --text2: var(--figma-color-text-secondary, #757575);
+    --border: var(--figma-color-border, #e6e6e6);
+    --brand: var(--figma-color-bg-brand, #0d99ff);
+    --brand-text: var(--figma-color-text-brand, #007be5);
+    --onbrand: var(--figma-color-text-onbrand, #fff);
+    --danger: var(--figma-color-text-danger, #dc3412);
+    --warn: var(--figma-color-text-warning, #b86200);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { font: 11px/16px Inter, system-ui, -apple-system, sans-serif; color: var(--text); background: var(--bg); }
+  main { position: relative; z-index: 1; height: 100%; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+  button { font: inherit; color: inherit; }
+  .link { background: none; border: 0; padding: 0; color: var(--brand-text); cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+
+  .drop { border: 1px dashed var(--border); border-radius: 6px; padding: 20px 12px; text-align: center; color: var(--text2); cursor: pointer; }
+  .drop strong { display: block; color: var(--text); font-weight: 600; margin-bottom: 2px; }
+  .drop.over { border-color: var(--brand); background: var(--bg2); }
+
+  .source { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .source-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg2); }
+  .source-head span { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pages { max-height: 140px; overflow: auto; padding: 4px 0; }
+  .pages label { display: flex; gap: 8px; align-items: center; padding: 3px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pages .hint { padding: 3px 10px; color: var(--text2); }
+
+  .title { font-weight: 600; margin-bottom: 6px; display: block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .chip { border: 1px solid var(--border); background: var(--bg); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .chip.on { border-color: var(--brand); background: var(--brand); color: var(--onbrand); }
+  input[type=text], input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; }
+  input[type=text] { width: 100%; }
+  input[type=number] { width: 70px; }
+  input:focus { outline: 1px solid var(--brand); outline-offset: -1px; }
+
+  .opts { display: flex; flex-direction: column; gap: 6px; }
+  .opts label { display: flex; gap: 8px; align-items: center; }
+  .opts .sub { color: var(--text2); }
+
+  .primary { border: 0; border-radius: 6px; padding: 8px 12px; background: var(--brand); color: var(--onbrand); font-weight: 600; cursor: pointer; }
+  .primary:disabled { opacity: 0.4; cursor: default; }
+
+  .bar { height: 4px; border-radius: 2px; background: var(--bg2); overflow: hidden; margin-bottom: 6px; }
+  .bar div { height: 100%; width: 0; background: var(--brand); transition: width .15s; }
+  #statusText { color: var(--text2); }
+  #log { display: flex; flex-direction: column; gap: 4px; }
+  #log div { padding: 6px 8px; border-radius: 4px; background: var(--bg2); }
+  #log .err { color: var(--danger); }
+  #log .warn { color: var(--warn); }
+
+  /* The page being imported is rendered here, invisibly, behind the UI. */
+  iframe.render { position: fixed; left: 0; top: 0; border: 0; opacity: 0; pointer-events: none; z-index: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div id="drop" class="drop">
+    <strong>Drop an .html or .zip file</strong>
+    <div><button class="link" id="pickFile">Choose a file</button> · <button class="link" id="pickFolder">choose a folder</button></div>
+    <input type="file" id="fileInput" accept=".html,.htm,.zip" hidden>
+    <input type="file" id="folderInput" webkitdirectory hidden>
+  </div>
+
+  <div id="source" class="source" hidden>
+    <div class="source-head"><span id="sourceName"></span><button class="link" id="clear">Clear</button></div>
+    <div id="pages" class="pages"></div>
+  </div>
+
+  <section>
+    <span class="title">Viewport widths</span>
+    <div class="chips" id="chips">
+      <button class="chip on" data-w="1440">Desktop 1440</button>
+      <button class="chip" data-w="1024">Laptop 1024</button>
+      <button class="chip" data-w="768">Tablet 768</button>
+      <button class="chip" data-w="390">Mobile 390</button>
+    </div>
+    <input type="text" id="customW" placeholder="Custom widths, e.g. 1280, 375">
+  </section>
+
+  <section class="opts">
+    <span class="title">Options</span>
+    <label><input type="checkbox" id="optNewPage" checked> Put the import on a new Figma page</label>
+    <label><input type="checkbox" id="optScripts" checked> Run the page's JavaScript</label>
+    <label><input type="checkbox" id="optAutoLayout" checked> Use auto layout</label>
+    <label><input type="checkbox" id="optFlatten" checked> Flatten unstyled wrapper elements</label>
+    <label class="sub">Wait after load <input type="number" id="optWait" value="800" min="0" step="100"> ms</label>
+  </section>
+
+  <button id="go" class="primary" disabled>Import to Figma</button>
+
+  <div id="status" hidden>
+    <div class="bar"><div id="barFill"></div></div>
+    <div id="statusText"></div>
+  </div>
+  <div id="log"></div>
+</main>
+
+<script>
+'use strict';
+
+// ===========================================================================
+// Small utilities
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const withTimeout = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), sleep(ms)]);
+
+// Split on `sep` (',' or ' ') only at the top level — not inside parentheses or quotes.
+function splitTop(str, sep) {
+  const out = [];
+  let depth = 0, cur = '', quote = null;
+  for (const ch of String(str || '')) {
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    const isSep = sep === ' ' ? /\s/.test(ch) : ch === sep;
+    if (depth === 0 && isSep) { if (cur.trim()) out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+const MIME = {
+  html: 'text/html', htm: 'text/html', css: 'text/css', js: 'text/javascript', mjs: 'text/javascript', json: 'application/json',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+  svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp',
+  woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', eot: 'application/vnd.ms-fontobject',
+  mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg',
+};
+const mimeOf = (path) => MIME[(path.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+
+function b64(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const utf8 = new TextDecoder();
+
+// ===========================================================================
+// Colours, gradients, shadows — parsing computed CSS values into Figma paints/effects
+
+const colorCtx = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  return c.getContext('2d', { willReadFrequently: true });
+})();
+const colorCache = new Map();
+
+function parseColor(str) {
+  if (!str) return null;
+  str = str.trim();
+  if (colorCache.has(str)) return colorCache.get(str);
+  let out = null;
+  const m = str.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+)(%?))?\s*\)$/);
+  if (m) {
+    out = { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a: m[4] === undefined ? 1 : m[5] ? +m[4] / 100 : +m[4] };
+  } else if (str === 'transparent') {
+    out = { r: 0, g: 0, b: 0, a: 0 };
+  } else if (CSS.supports('color', str)) {
+    // oklch(), color(), lab() … let the browser do the conversion.
+    colorCtx.clearRect(0, 0, 1, 1);
+    colorCtx.fillStyle = '#000';
+    colorCtx.fillStyle = str;
+    colorCtx.fillRect(0, 0, 1, 1);
+    const d = colorCtx.getImageData(0, 0, 1, 1).data;
+    out = { r: d[0] / 255, g: d[1] / 255, b: d[2] / 255, a: d[3] / 255 };
+  }
+  if (out) for (const k of ['r', 'g', 'b', 'a']) out[k] = Math.max(0, Math.min(1, out[k]));
+  colorCache.set(str, out);
+  return out;
+}
+
+const isColor = (tok) => tok !== 'inset' && CSS.supports('color', tok);
+const solid = (c) => ({ type: 'SOLID', color: { r: c.r, g: c.g, b: c.b }, opacity: c.a });
+const WHITE = { r: 1, g: 1, b: 1, a: 1 };
+
+function parseAngle(tok) {
+  const m = /^(-?[\d.]+)(deg|rad|turn|grad)$/.exec(tok || '');
+  if (!m) return null;
+  const v = +m[1];
+  return m[2] === 'deg' ? v : m[2] === 'rad' ? (v * 180) / Math.PI : m[2] === 'turn' ? v * 360 : v * 0.9;
+}
+
+function sideAngle(spec, w, h) {
+  const s = spec.replace(/^to\s+/, '');
+  const corner = (Math.atan2(h, w) * 180) / Math.PI;
+  const has = (k) => s.includes(k);
+  if (has('top') && has('right')) return corner;
+  if (has('bottom') && has('right')) return 180 - corner;
+  if (has('bottom') && has('left')) return 180 + corner;
+  if (has('top') && has('left')) return 360 - corner;
+  return has('top') ? 0 : has('right') ? 90 : has('left') ? 270 : 180;
+}
+
+function parseStops(args, lenPx, unitPerDeg) {
+  const raw = [];
+  for (const a of args) {
+    const toks = splitTop(a, ' ');
+    const ci = toks.findIndex(isColor);
+    if (ci < 0) continue; // interpolation hint
+    const color = parseColor(toks[ci]);
+    if (!color) continue;
+    const pos = toks.filter((_, i) => i !== ci).map((t) => {
+      const v = parseFloat(t);
+      if (t.endsWith('%')) return v / 100;
+      if (t.endsWith('px')) return lenPx ? v / lenPx : 0;
+      const ang = parseAngle(t);
+      if (ang !== null && unitPerDeg) return ang / 360;
+      return isNaN(v) ? null : v / 100;
+    });
+    if (!pos.length) raw.push({ color, pos: null });
+    else pos.forEach((p) => raw.push({ color, pos: p }));
+  }
+  if (!raw.length) return null;
+  if (raw.length === 1) raw.push({ color: raw[0].color, pos: 1 });
+  if (raw[0].pos === null) raw[0].pos = 0;
+  if (raw[raw.length - 1].pos === null) raw[raw.length - 1].pos = 1;
+  for (let i = 1; i < raw.length; i++) {
+    if (raw[i].pos !== null) continue;
+    let j = i;
+    while (raw[j].pos === null) j++;
+    const a = raw[i - 1].pos, b = raw[j].pos;
+    for (let k = i; k < j; k++) raw[k].pos = a + ((b - a) * (k - i + 1)) / (j - i + 1);
+  }
+  // CSS interpolates in premultiplied alpha, so a fade to `transparent` keeps its hue.
+  // Figma doesn't — borrow RGB from the nearest visible neighbour to avoid a grey fringe.
+  raw.forEach((s, i) => {
+    if (s.color.a > 0) return;
+    const near = raw[i - 1] && raw[i - 1].color.a > 0 ? raw[i - 1] : raw[i + 1] && raw[i + 1].color.a > 0 ? raw[i + 1] : null;
+    if (near) s.color = { r: near.color.r, g: near.color.g, b: near.color.b, a: 0 };
+  });
+  let prev = 0;
+  return raw.map((s) => {
+    const p = Math.max(prev, Math.min(1, Math.max(0, s.pos)));
+    prev = p;
+    return { position: p, color: { r: s.color.r, g: s.color.g, b: s.color.b, a: s.color.a } };
+  });
+}
+
+function parseGradient(str, w, h) {
+  const m = /^(?:repeating-)?(linear|radial|conic)-gradient\(([\s\S]*)\)$/.exec(str.trim());
+  if (!m || w <= 0 || h <= 0) return null;
+  const kind = m[1];
+  const args = splitTop(m[2], ',');
+  const firstIsStop = () => isColor(splitTop(args[0], ' ')[0]) || isColor(splitTop(args[0], ' ').slice(-1)[0]);
+
+  if (kind === 'linear') {
+    let angle = 180;
+    const a = parseAngle(args[0]);
+    if (a !== null) { angle = a; args.shift(); }
+    else if (/^to\s/.test(args[0])) { angle = sideAngle(args[0], w, h); args.shift(); }
+    const t = (angle * Math.PI) / 180, sin = Math.sin(t), cos = Math.cos(t);
+    const L = Math.abs(w * sin) + Math.abs(h * cos);
+    const stops = parseStops(args, L);
+    if (!stops) return null;
+    // Maps normalised layer space onto gradient space, where the gradient runs x: 0 → 1.
+    const transform = [
+      [(w * sin) / L, (-h * cos) / L, 0.5 - (w * sin - h * cos) / (2 * L)],
+      [(w * cos) / L, (h * sin) / L, 0.5 - (w * cos + h * sin) / (2 * L)],
+    ];
+    return { type: 'GRADIENT_LINEAR', gradientTransform: transform, gradientStops: stops };
+  }
+
+  let spec = '';
+  if (!firstIsStop()) spec = args.shift();
+  if (kind === 'conic') {
+    const stops = parseStops(args, 0, true);
+    if (!stops) return null;
+    return { type: 'GRADIENT_ANGULAR', gradientTransform: [[1, 0, 0], [0, 1, 0]], gradientStops: stops };
+  }
+
+  // radial
+  let cx = w / 2, cy = h / 2;
+  const at = /\bat\s+(.+)$/.exec(spec);
+  if (at) {
+    const KW = { left: 0, top: 0, center: 50, right: 100, bottom: 100 };
+    let toks = at[1].trim().split(/\s+/);
+    if (toks.length === 1) toks.push('center');
+    if (toks[0] === 'top' || toks[0] === 'bottom') toks = [toks[1], toks[0]];
+    const val = (t, size) => (t in KW ? (KW[t] / 100) * size : t.endsWith('%') ? (parseFloat(t) / 100) * size : parseFloat(t) || 0);
+    cx = val(toks[0], w);
+    cy = val(toks[1], h);
+  }
+  const shape = spec.replace(/\bat\s+.+$/, '').trim();
+  const circle = /circle/.test(shape) || (/^\s*[\d.]+px\s*$/.test(shape));
+  const dx = [cx, w - cx], dy = [cy, h - cy];
+  let rx, ry;
+  const sizes = shape.match(/-?[\d.]+(px|%)/g);
+  if (sizes) {
+    const px = (t, size) => (t.endsWith('%') ? (parseFloat(t) / 100) * size : parseFloat(t));
+    rx = px(sizes[0], w);
+    ry = sizes[1] ? px(sizes[1], h) : rx;
+  } else if (/closest-side/.test(shape)) {
+    rx = Math.min(...dx); ry = Math.min(...dy);
+    if (circle) rx = ry = Math.min(rx, ry);
+  } else if (/farthest-side/.test(shape)) {
+    rx = Math.max(...dx); ry = Math.max(...dy);
+    if (circle) rx = ry = Math.max(rx, ry);
+  } else if (/closest-corner/.test(shape)) {
+    rx = Math.min(...dx); ry = Math.min(...dy);
+    if (circle) rx = ry = Math.hypot(rx, ry); else { rx *= Math.SQRT2; ry *= Math.SQRT2; }
+  } else {
+    // farthest-corner (the default)
+    rx = Math.max(...dx); ry = Math.max(...dy);
+    if (circle) rx = ry = Math.hypot(rx, ry); else { rx *= Math.SQRT2; ry *= Math.SQRT2; }
+  }
+  rx = Math.max(rx, 0.5); ry = Math.max(ry, 0.5);
+  const stops = parseStops(args, rx);
+  if (!stops) return null;
+  return {
+    type: 'GRADIENT_RADIAL',
+    gradientTransform: [
+      [w / (2 * rx), 0, 0.5 - cx / (2 * rx)],
+      [0, h / (2 * ry), 0.5 - cy / (2 * ry)],
+    ],
+    gradientStops: stops,
+  };
+}
+
+function parseShadows(str) {
+  if (!str || str === 'none') return [];
+  const out = [];
+  for (const s of splitTop(str, ',')) {
+    let inset = false, color = null;
+    const nums = [];
+    for (const t of splitTop(s, ' ')) {
+      if (t === 'inset') inset = true;
+      else if (/^-?[\d.]+(px)?$/.test(t)) nums.push(parseFloat(t));
+      else color = parseColor(t);
+    }
+    color = color || { r: 0, g: 0, b: 0, a: 1 };
+    // Skip invisible shadows (Tailwind pads every shadow stack with `0 0 #0000` placeholders).
+    if (color.a <= 0 || nums.every((n) => n === 0)) continue;
+    out.push({
+      type: inset ? 'INNER_SHADOW' : 'DROP_SHADOW',
+      color: { r: color.r, g: color.g, b: color.b, a: color.a },
+      offset: { x: nums[0] || 0, y: nums[1] || 0 },
+      radius: Math.max(0, nums[2] || 0),
+      spread: nums[3] || 0,
+      visible: true,
+      blendMode: 'NORMAL',
+    });
+  }
+  return out;
+}
+
+// ===========================================================================
+// ZIP reading (stored + deflate) using the browser's DecompressionStream
+
+async function unzip(buf) {
+  const u8 = new Uint8Array(buf);
+  const dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('That doesn’t look like a valid ZIP file.');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const files = new Map();
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('The ZIP file is corrupt or uses an unsupported format (ZIP64).');
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const local = dv.getUint32(p + 42, true);
+    const name = utf8.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (name.endsWith('/') || /(^|\/)(__MACOSX|\.DS_Store)/.test(name)) continue;
+    const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    const raw = u8.subarray(start, start + csize);
+    if (method === 0) files.set(name, raw);
+    else if (method === 8) files.set(name, await inflate(raw));
+  }
+  return files;
+}
+
+async function inflate(raw) {
+  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// ===========================================================================
+// Source state: either a single HTML file, or a set of files (ZIP / folder)
+
+const state = { name: '', files: null, lower: null, htmls: [] };
+
+function setFileSet(name, files) {
+  state.name = name;
+  state.files = files;
+  state.lower = new Map([...files.keys()].map((k) => [k.toLowerCase(), k]));
+  const depth = (p) => p.split('/').length;
+  const isIndex = (p) => (/(^|\/)index\.html?$/i.test(p) ? 1 : 0);
+  const htmls = [...files.keys()].filter((k) => /\.html?$/i.test(k));
+  htmls.sort((a, b) => depth(a) - depth(b) || isIndex(b) - isIndex(a) || a.localeCompare(b));
+  state.htmls = htmls.map((path, i) => ({ path, checked: i === 0 || htmls.length <= 8 }));
+}
+
+function htmlText(entry) {
+  return entry.text != null ? entry.text : utf8.decode(state.files.get(entry.path));
+}
+
+// Resolve a reference (relative to `base`) to a path inside the file set.
+function findFile(base, ref) {
+  if (!state.files || !ref) return null;
+  ref = ref.trim();
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) return null;
+  ref = ref.replace(/[?#].*$/, '');
+  try { ref = decodeURIComponent(ref); } catch (e) { /* keep as is */ }
+  if (!ref) return null;
+  const dir = base.split('/').slice(0, -1);
+  const join = (parts, rel) => {
+    const out = parts.slice();
+    for (const seg of rel.split('/')) {
+      if (seg === '..') out.pop();
+      else if (seg && seg !== '.') out.push(seg);
+    }
+    return out.join('/');
+  };
+  const candidates = [];
+  if (ref.startsWith('/')) {
+    // Root-relative: try the archive root, then each folder above the HTML file.
+    candidates.push(join([], ref));
+    for (let i = 1; i <= dir.length; i++) candidates.push(join(dir.slice(0, i), ref.slice(1)));
+  } else {
+    candidates.push(join(dir, ref));
+  }
+  for (const c of candidates) {
+    if (state.files.has(c)) return c;
+    const hit = state.lower.get(c.toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
+}
+
+const dataUrlCache = new Map();
+function dataUrl(path, mime) {
+  const key = path + '|' + (mime || '');
+  if (!dataUrlCache.has(key)) dataUrlCache.set(key, 'data:' + (mime || mimeOf(path)) + ';base64,' + b64(state.files.get(path)));
+  return dataUrlCache.get(key);
+}
+
+function processCss(css, base, depth) {
+  depth = depth || 0;
+  css = css.replace(/@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1\s*\)?[^;]*;/g, (all, q, ref) => {
+    const p = findFile(base, ref);
+    if (!p || depth > 6) return all;
+    return processCss(utf8.decode(state.files.get(p)), p, depth + 1);
+  });
+  return css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/g, (all, q, ref) => {
+    if (/^data:/i.test(ref)) return all;
+    const p = findFile(base, ref);
+    return p ? 'url("' + dataUrl(p) + '")' : all;
+  });
+}
+
+// Freeze animations/transitions at their end state and hide scrollbars so the
+// layout width matches the chosen viewport exactly.
+const FREEZE_CSS = `
+*, *::before, *::after {
+  animation-duration: 0.001s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important;
+  scrollbar-width: none !important;
+}
+*::-webkit-scrollbar { display: none !important; }`;
+
+// Inline every local asset (CSS, images, fonts, scripts) so the page renders
+// self-contained inside a srcdoc iframe.
+function prepareHtml(entry) {
+  const base = entry.path;
+  const doc = new DOMParser().parseFromString(htmlText(entry), 'text/html');
+  const swap = (el, attr) => {
+    const v = el.getAttribute(attr);
+    const p = v && findFile(base, v);
+    if (p) el.setAttribute(attr, dataUrl(p));
+  };
+
+  doc.querySelectorAll('base[href]').forEach((b) => { if (!/^[a-z]+:\/\//i.test(b.getAttribute('href'))) b.remove(); });
+
+  // Lazy-loading: load everything eagerly, and promote common data-src patterns.
+  doc.querySelectorAll('img, iframe').forEach((el) => el.removeAttribute('loading'));
+  doc.querySelectorAll('img').forEach((img) => {
+    const lazy = img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original');
+    const src = img.getAttribute('src') || '';
+    if (lazy && (!src || /^data:image\/(gif|svg)/.test(src) || /placeholder|blank|lazy/i.test(src))) img.setAttribute('src', lazy);
+    const lazySet = img.getAttribute('data-srcset');
+    if (lazySet && !img.getAttribute('srcset')) img.setAttribute('srcset', lazySet);
+  });
+
+  if (state.files) {
+    doc.querySelectorAll('link[href]').forEach((l) => {
+      const rel = (l.getAttribute('rel') || '').toLowerCase();
+      const p = findFile(base, l.getAttribute('href'));
+      if (!p) return;
+      if (/\bstylesheet\b/.test(rel)) {
+        const st = doc.createElement('style');
+        if (l.getAttribute('media')) st.setAttribute('media', l.getAttribute('media'));
+        st.textContent = processCss(utf8.decode(state.files.get(p)), p);
+        l.replaceWith(st);
+      } else if (/preload|prefetch/.test(rel)) {
+        l.remove();
+      } else {
+        l.setAttribute('href', dataUrl(p));
+      }
+    });
+    doc.querySelectorAll('style').forEach((st) => { st.textContent = processCss(st.textContent, base); });
+    doc.querySelectorAll('[style]').forEach((el) => el.setAttribute('style', processCss(el.getAttribute('style'), base)));
+    doc.querySelectorAll('img, source, video, audio, input, embed, iframe, track').forEach((el) => swap(el, 'src'));
+    doc.querySelectorAll('video[poster]').forEach((el) => swap(el, 'poster'));
+    doc.querySelectorAll('object[data]').forEach((el) => swap(el, 'data'));
+    doc.querySelectorAll('img[srcset], source[srcset]').forEach((el) => {
+      el.setAttribute('srcset', el.getAttribute('srcset').split(/,\s+/).map((part) => {
+        const [u, ...rest] = part.trim().split(/\s+/);
+        const p = findFile(base, u);
+        return [p ? dataUrl(p) : u, ...rest].join(' ');
+      }).join(', '));
+    });
+    doc.querySelectorAll('script[src]').forEach((s) => {
+      const p = findFile(base, s.getAttribute('src'));
+      if (p) s.setAttribute('src', dataUrl(p, 'text/javascript'));
+    });
+    // SVG: external sprites (<use href="icons.svg#x">) get inlined; other hrefs become data URLs.
+    const sprites = new Set();
+    doc.querySelectorAll('use, image, feImage').forEach((el) => {
+      for (const attr of ['href', 'xlink:href']) {
+        const v = el.getAttribute(attr);
+        if (!v) continue;
+        const p = findFile(base, v);
+        if (!p) continue;
+        const hash = v.includes('#') ? v.slice(v.indexOf('#')) : '';
+        if (el.localName === 'use' && hash) {
+          if (!sprites.has(p)) {
+            sprites.add(p);
+            const holder = doc.createElement('div');
+            holder.setAttribute('style', 'display:none');
+            holder.innerHTML = utf8.decode(state.files.get(p)).replace(/<\?xml[^>]*>/, '');
+            doc.body.appendChild(holder);
+          }
+          el.setAttribute(attr, hash);
+        } else {
+          el.setAttribute(attr, dataUrl(p));
+        }
+      }
+    });
+  }
+
+  const freeze = doc.createElement('style');
+  freeze.textContent = FREEZE_CSS;
+  (doc.head || doc.documentElement).appendChild(freeze);
+
+  const dt = doc.doctype;
+  const doctype = dt
+    ? '<!DOCTYPE ' + dt.name + (dt.publicId ? ' PUBLIC "' + dt.publicId + '"' : '') + (dt.systemId ? (dt.publicId ? '' : ' SYSTEM') + ' "' + dt.systemId + '"' : '') + '>'
+    : '';
+  return doctype + '\n' + doc.documentElement.outerHTML;
+}
+
+// ===========================================================================
+// Rendering in a hidden iframe
+
+function renderInIframe(html, width, height, opts) {
+  return new Promise((resolve) => {
+    const f = document.createElement('iframe');
+    f.className = 'render';
+    f.setAttribute('sandbox', opts.scripts ? 'allow-same-origin allow-scripts' : 'allow-same-origin');
+    f.style.width = width + 'px';
+    f.style.height = height + 'px';
+    const timer = setTimeout(() => resolve(f), 20000);
+    f.onload = () => { clearTimeout(timer); resolve(f); };
+    f.srcdoc = html;
+    document.body.appendChild(f);
+  }).then(async (f) => {
+    const win = f.contentWindow;
+    const doc = win.document;
+    await withTimeout(doc.fonts && doc.fonts.ready, 5000);
+    if (opts.scripts) {
+      await sleep(opts.wait);
+      // Scroll through the page so scroll-triggered reveals and lazy loaders fire.
+      const total = doc.documentElement.scrollHeight;
+      for (let y = 0; y < total; y += Math.round(height * 0.8)) {
+        win.scrollTo(0, y);
+        await sleep(40);
+      }
+      win.scrollTo(0, 0);
+      await sleep(150);
+    }
+    const pending = [...doc.images].filter((i) => !i.complete).map((i) => new Promise((r) => { i.addEventListener('load', r); i.addEventListener('error', r); }));
+    await withTimeout(Promise.all(pending), 8000);
+    await withTimeout(doc.fonts && doc.fonts.ready, 3000);
+    await sleep(50);
+    return f;
+  });
+}
+
+// ===========================================================================
+// Capture: walk the rendered DOM and produce the node tree for the main thread.
+//
+// Node shapes (all coordinates absolute in page space):
+//   frame: { type, name, x, y, w, h, fills, stroke?, radius?, effects?, opacity?, blend?, clip, children }
+//   rect:  same as frame without children (used for <img>, <canvas>, …)
+//   svg:   { type, name, x, y, w, h, svg, fallback }
+//   text:  { type, x, y, w, h, auto, anchor, align, spans: [{ text, family, weight, italic, size, color, lh, ls, deco, tcase }] }
+
+const SKIP_TAGS = new Set(['head', 'script', 'style', 'noscript', 'template', 'meta', 'link', 'title', 'base', 'source', 'track', 'datalist', 'param', 'map', 'area']);
+const REPLACED = new Set(['img', 'svg', 'input', 'textarea', 'select', 'canvas', 'video', 'iframe', 'object', 'embed', 'audio', 'button', 'math', 'picture']);
+const KEEP_TAGS = new Set(['header', 'nav', 'main', 'section', 'article', 'aside', 'footer', 'form', 'button', 'dialog', 'table', 'figure']);
+const TEXT_ALIGN = { left: 'LEFT', start: 'LEFT', '-webkit-left': 'LEFT', center: 'CENTER', '-webkit-center': 'CENTER', right: 'RIGHT', end: 'RIGHT', '-webkit-right': 'RIGHT', justify: 'JUSTIFIED' };
+const TEXT_CASE = { uppercase: 'UPPER', lowercase: 'LOWER', capitalize: 'TITLE' };
+const SVG_PROPS = ['fill-rule', 'clip-rule', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-miterlimit', 'opacity'];
+const SVG_TEXT_PROPS = ['font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'dominant-baseline', 'letter-spacing'];
+const SVG_DEFS = 'defs, symbol, clipPath, clippath, mask, pattern, marker, linearGradient, lineargradient, radialGradient, radialgradient, filter';
+const ACCENT = { r: 0, g: 0.459, b: 1, a: 1 };
+
+function makeImageRegistry() {
+  const byUrl = new Map();
+  const list = [];
+  return {
+    list,
+    request(url, size, wantSvg) {
+      let e = byUrl.get(url);
+      if (!e) {
+        e = { id: 'img' + list.length, url, w: 0, h: 0, svg: false };
+        byUrl.set(url, e);
+        list.push(e);
+      }
+      e.w = Math.max(e.w, size.w || 0);
+      e.h = Math.max(e.h, size.h || 0);
+      if (wantSvg) e.svg = true;
+      return e.id;
+    },
+  };
+}
+
+function capturePage(win, opts, images) {
+  const doc = win.document;
+  const ox = win.scrollX, oy = win.scrollY;
+  const styleOf = (el, pseudo) => win.getComputedStyle(el, pseudo || null);
+  const kindCache = new WeakMap();
+  const range = doc.createRange();
+
+  const boxOf = (r) => ({ x: r.left + ox, y: r.top + oy, w: r.width, h: r.height });
+
+  function childNodesOf(el) {
+    if (el.shadowRoot) return el.shadowRoot.childNodes;
+    if (el.localName === 'slot') {
+      const assigned = el.assignedNodes({ flatten: true });
+      if (assigned.length) return assigned;
+    }
+    return el.childNodes;
+  }
+
+  function nameFor(el, tag) {
+    const label = el.getAttribute('aria-label');
+    if (label) return (tag + ' "' + label + '"').slice(0, 64);
+    let name = tag;
+    if (el.id) name += '#' + el.id;
+    const cls = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+    if (cls.length) name += '.' + cls.join('.');
+    return name.slice(0, 64);
+  }
+
+  // ---- boxes -------------------------------------------------------------
+
+  function hasBoxPaint(s) {
+    const bg = parseColor(s.backgroundColor);
+    if (bg && bg.a > 0) return true;
+    if (s.backgroundImage !== 'none' || s.boxShadow !== 'none') return true;
+    return ['Top', 'Right', 'Bottom', 'Left'].some((n) => {
+      const st = s['border' + n + 'Style'];
+      return st !== 'none' && st !== 'hidden' && parseFloat(s['border' + n + 'Width']) > 0;
+    });
+  }
+
+  function backgroundPaints(s, b) {
+    const fills = [];
+    const c = parseColor(s.backgroundColor);
+    if (c && c.a > 0) fills.push(solid(c));
+    if (s.backgroundImage && s.backgroundImage !== 'none') {
+      const layers = splitTop(s.backgroundImage, ',');
+      const sizes = splitTop(s.backgroundSize, ',');
+      const repeats = splitTop(s.backgroundRepeat, ',');
+      // CSS lists the top layer first; Figma stacks bottom-up.
+      for (let i = layers.length - 1; i >= 0; i--) {
+        const layer = layers[i];
+        const url = /^url\(\s*(['"]?)([\s\S]*)\1\s*\)$/.exec(layer);
+        if (url) {
+          const size = (sizes[i] || sizes[0] || 'auto').trim();
+          const repeat = repeats[i] || repeats[0] || 'repeat';
+          let scaleMode = 'FILL';
+          if (size === 'contain') scaleMode = 'FIT';
+          else if (size !== 'cover' && /^auto/.test(size) && !/no-repeat/.test(repeat)) scaleMode = 'TILE';
+          fills.push({ type: 'IMAGE', imageId: images.request(url[2], b), scaleMode });
+        } else {
+          const g = parseGradient(layer, b.w, b.h);
+          if (g) fills.push(g);
+        }
+      }
+    }
+    return fills;
+  }
+
+  function borderOf(s) {
+    const sides = ['Top', 'Right', 'Bottom', 'Left'].map((n) => {
+      const st = s['border' + n + 'Style'];
+      const c = parseColor(s['border' + n + 'Color']);
+      const w = st === 'none' || st === 'hidden' || !c || c.a <= 0 ? 0 : parseFloat(s['border' + n + 'Width']) || 0;
+      return { w, st, c };
+    });
+    const on = sides.find((x) => x.w > 0);
+    if (!on) return null;
+    return {
+      paint: solid(on.c),
+      weights: sides.map((x) => x.w),
+      dash: on.st === 'dashed' ? 'dashed' : on.st === 'dotted' ? 'dotted' : null,
+    };
+  }
+
+  function radiiOf(s, b) {
+    const m = Math.min(b.w, b.h);
+    const one = (v) => {
+      const t = String(v || '0').split(' ')[0];
+      const n = parseFloat(t) || 0;
+      return Math.min(t.endsWith('%') ? (n / 100) * m : n, m / 2);
+    };
+    const r = [one(s.borderTopLeftRadius), one(s.borderTopRightRadius), one(s.borderBottomRightRadius), one(s.borderBottomLeftRadius)];
+    return r.some((x) => x > 0) ? r : null;
+  }
+
+  function effectsOf(s) {
+    const fx = parseShadows(s.boxShadow);
+    const blur = /blur\(([\d.]+)px\)/.exec(s.filter || '');
+    if (blur) fx.push({ type: 'LAYER_BLUR', radius: parseFloat(blur[1]) * 2, visible: true });
+    const bblur = /blur\(([\d.]+)px\)/.exec(s.backdropFilter || s.webkitBackdropFilter || '');
+    if (bblur) fx.push({ type: 'BACKGROUND_BLUR', radius: parseFloat(bblur[1]) * 2, visible: true });
+    return fx.length ? fx : null;
+  }
+
+  function decorate(node, s, b, withBackground) {
+    node.fills = withBackground ? backgroundPaints(s, b) : [];
+    const stroke = borderOf(s);
+    if (stroke) node.stroke = stroke;
+    const radius = radiiOf(s, b);
+    if (radius) node.radius = radius;
+    const fx = effectsOf(s);
+    if (fx) node.effects = fx;
+  }
+
+  // Layer order among siblings. In-flow content keeps DOM order (what designers expect
+  // in the layers panel); only out-of-flow and explicitly z-indexed elements move:
+  // negative z → in-flow → absolute/fixed → positive z.
+  function zKey(s, parentS) {
+    const zi = s.zIndex === 'auto' ? null : parseInt(s.zIndex, 10);
+    const flexItem = parentS && /flex|grid/.test(parentS.display);
+    if (zi !== null && (s.position !== 'static' || flexItem)) return zi < 0 ? [-1, zi] : zi === 0 ? [2, 0] : [3, zi];
+    if (s.position === 'absolute' || s.position === 'fixed') return [2, 0];
+    return [0, 0];
+  }
+  const byZ = (a, b) => a.z[0] - b.z[0] || a.z[1] - b.z[1];
+
+  // ---- text --------------------------------------------------------------
+
+  // 'text' = inline content that can live inside a single Figma text layer
+  // 'block' = needs its own layer;  'skip' = not rendered
+  function inlineKind(el) {
+    let k = kindCache.get(el);
+    if (k) return k;
+    const tag = el.localName;
+    const s = SKIP_TAGS.has(tag) ? null : styleOf(el);
+    if (!s || s.display === 'none') k = 'skip';
+    else if (tag === 'br') k = 'text';
+    else if (s.display !== 'inline' || REPLACED.has(tag) || hasBoxPaint(s) || hasInlineSpacing(s) || parseFloat(s.opacity) < 1) k = 'block';
+    else {
+      k = 'text';
+      for (const c of childNodesOf(el)) {
+        if (c.nodeType === 1 && inlineKind(c) === 'block') { k = 'block'; break; }
+      }
+    }
+    kindCache.set(el, k);
+    return k;
+  }
+
+  // Horizontal margin/padding on an inline element (e.g. nav links) creates gaps a
+  // single text layer can't express, so such elements get their own layer.
+  const hasInlineSpacing = (s) =>
+    parseFloat(s.marginLeft) > 1 || parseFloat(s.marginRight) > 1 || parseFloat(s.paddingLeft) > 1 || parseFloat(s.paddingRight) > 1;
+
+  const decoOf = (s) => (/underline/.test(s.textDecorationLine) ? 'UNDERLINE' : /line-through/.test(s.textDecorationLine) ? 'STRIKETHROUGH' : 'NONE');
+
+  function spanStyle(s, deco) {
+    let color = parseColor(s.webkitTextFillColor);
+    if (!color || color.a === 0) color = parseColor(s.color) || { r: 0, g: 0, b: 0, a: 1 };
+    return {
+      family: s.fontFamily,
+      weight: parseInt(s.fontWeight, 10) || 400,
+      italic: s.fontStyle !== 'normal',
+      size: parseFloat(s.fontSize) || 16,
+      color,
+      lh: s.lineHeight === 'normal' ? 0 : parseFloat(s.lineHeight) || 0,
+      ls: s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0,
+      deco: deco || 'NONE',
+      tcase: TEXT_CASE[s.textTransform] || 'ORIGINAL',
+    };
+  }
+
+  function textRects(node) {
+    range.selectNodeContents(node);
+    return [...range.getClientRects()].filter((r) => r.width > 0.01 && r.height > 0.01);
+  }
+
+  // Turn a run of sibling text nodes + plain inline elements into one text layer.
+  function textRun(run, layoutEl, layoutS) {
+    const parts = [];
+    const textNodes = [];
+    const collect = (n, deco) => {
+      if (n.nodeType === 3) {
+        if (!n.data) return;
+        const pe = n.parentElement || layoutEl;
+        const s = styleOf(pe);
+        if (s.visibility !== 'visible') return;
+        parts.push({ raw: n.data, s, deco });
+        textNodes.push(n);
+      } else if (n.nodeType === 1) {
+        if (n.localName === 'br') { parts.push({ raw: '\n', br: true, s: styleOf(n.parentElement || layoutEl), deco }); return; }
+        const s = styleOf(n);
+        if (s.display === 'none') return;
+        const d = decoOf(s);
+        for (const c of childNodesOf(n)) collect(c, d !== 'NONE' ? d : deco);
+      }
+    };
+    for (const n of run) collect(n, decoOf(layoutS));
+
+    // Apply CSS white-space collapsing.
+    const chars = [];
+    parts.forEach((part, pi) => {
+      const ws = part.s.whiteSpace;
+      const pre = !part.br && /^(pre|pre-wrap|break-spaces)$/.test(ws);
+      let t = part.raw;
+      if (!part.br && !pre) {
+        t = ws === 'pre-line' ? t.replace(/[ \t\r\f]+/g, ' ').replace(/ ?\n ?/g, '\n') : t.replace(/[ \t\n\r\f]+/g, ' ');
+      }
+      for (const ch of t) {
+        const prev = chars[chars.length - 1];
+        if (ch === ' ' && !pre && (!prev || prev.ch === '\n' || (prev.ch === ' ' && !prev.pre))) continue;
+        if (ch === '\n') {
+          while (chars.length && chars[chars.length - 1].ch === ' ' && !chars[chars.length - 1].pre) chars.pop();
+        }
+        chars.push({ ch, pi, pre });
+      }
+    });
+    while (chars.length) {
+      const last = chars[chars.length - 1];
+      if (last.ch === '\n' || (last.ch === ' ' && !last.pre)) chars.pop();
+      else break;
+    }
+    if (!chars.some((c) => c.ch.trim())) return null;
+
+    const spans = [];
+    for (const c of chars) {
+      const last = spans[spans.length - 1];
+      if (last && last.pi === c.pi) last.text += c.ch;
+      else spans.push({ pi: c.pi, text: c.ch });
+    }
+    const styled = [];
+    for (const sp of spans) {
+      const st = Object.assign({ text: sp.text }, spanStyle(parts[sp.pi].s, parts[sp.pi].deco));
+      const prev = styled[styled.length - 1];
+      if (prev && sameStyle(prev, st)) prev.text += st.text;
+      else styled.push(st);
+    }
+
+    // Geometry.
+    const rects = [];
+    for (const tn of textNodes) rects.push(...textRects(tn));
+    if (!rects.length) return null;
+    let L = Infinity, T = Infinity, R = -Infinity, B = -Infinity;
+    let first = rects[0];
+    for (const r of rects) {
+      L = Math.min(L, r.left); T = Math.min(T, r.top); R = Math.max(R, r.right); B = Math.max(B, r.bottom);
+      if (r.top < first.top - 0.5 || (Math.abs(r.top - first.top) <= 0.5 && r.left < first.left)) first = r;
+    }
+    const lh = styled[0].lh;
+    // CSS centres glyphs in the line box ("half-leading"); Figma does the same, so
+    // shift the layer up by half the leading of the first line.
+    const lead = lh > 0 ? (lh - first.height) / 2 : 0;
+    const refH = Math.max(lh, first.height);
+    const multi = B - T > refH * 1.5;
+    const align = TEXT_ALIGN[layoutS.textAlign] || 'LEFT';
+
+    const node = { type: 'text', z: [0, 0], spans: styled, align, y: T + oy - lead, h: B - T + 2 * lead };
+    const blockFlow = !/flex|grid|inline/.test(layoutS.display);
+    let cl = 0, cw = 0;
+    if (blockFlow) {
+      const cr = layoutEl.getBoundingClientRect();
+      cl = cr.left + parseFloat(layoutS.borderLeftWidth) + parseFloat(layoutS.paddingLeft);
+      cw = cr.width - parseFloat(layoutS.borderLeftWidth) - parseFloat(layoutS.borderRightWidth) - parseFloat(layoutS.paddingLeft) - parseFloat(layoutS.paddingRight);
+    }
+    if (!multi) {
+      node.auto = true;
+      node.x = L + ox;
+      node.w = R - L;
+      node.anchor = align === 'CENTER' ? 'CENTER' : align === 'RIGHT' ? 'RIGHT' : 'LEFT';
+      // The line box spans the container; auto layout can turn this into fill-width text.
+      const fits = node.anchor === 'LEFT' ? Math.abs(L - cl) <= 1
+        : node.anchor === 'RIGHT' ? Math.abs(R - (cl + cw)) <= 1
+        : Math.abs((L + R) / 2 - (cl + cw / 2)) <= 1.5;
+      if (blockFlow && fits && R - L <= cw + 1) node.lb = { x: cl + ox, w: cw };
+    } else {
+      let x = L, w = R - L;
+      if (blockFlow) {
+        // Wrap at the container's content width so line breaks match the browser.
+        x = Math.min(cl, L);
+        w = Math.max(cl + cw, R) - x;
+      }
+      node.auto = false;
+      node.x = x + ox;
+      node.w = w;
+    }
+    return node;
+  }
+
+  function sameStyle(a, b) {
+    return a.family === b.family && a.weight === b.weight && a.italic === b.italic && a.size === b.size &&
+      a.lh === b.lh && a.ls === b.ls && a.deco === b.deco && a.tcase === b.tcase &&
+      a.color.r === b.color.r && a.color.g === b.color.g && a.color.b === b.color.b && a.color.a === b.color.a;
+  }
+
+  // ---- special elements --------------------------------------------------
+
+  function svgColor(value, alphaBase) {
+    if (!value || value === 'none') return { v: 'none' };
+    if (/^url\(/.test(value)) return { v: value.replace(/url\(\s*["']?([^"')]+)["']?\s*\)/, 'url($1)') };
+    const c = parseColor(value);
+    if (!c) return { v: value };
+    const hex = '#' + [c.r, c.g, c.b].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+    return { v: hex, a: c.a * (isNaN(alphaBase) ? 1 : alphaBase) };
+  }
+
+  // Serialise an inline <svg>, baking computed styles (CSS classes, currentColor…)
+  // into presentation attributes so Figma's SVG importer sees what the browser sees.
+  function serializeSvg(el, w, h) {
+    const clone = el.cloneNode(true);
+    const src = [el, ...el.querySelectorAll('*')];
+    const dst = [clone, ...clone.querySelectorAll('*')];
+    const remove = [];
+    for (let i = 0; i < src.length; i++) {
+      const o = src[i], c = dst[i];
+      const tag = o.localName;
+      if (!c || tag === 'style' || tag === 'script' || tag === 'title' || tag === 'desc') continue;
+      const s = styleOf(o);
+      if (s.display === 'none' && o !== el && !o.closest(SVG_DEFS)) { remove.push(c); continue; }
+      for (const p of SVG_PROPS) {
+        let v = s.getPropertyValue(p);
+        if (!v) continue;
+        if (/^-?[\d.]+px$/.test(v)) v = parseFloat(v);
+        c.setAttribute(p, v);
+      }
+      if (tag === 'text' || tag === 'tspan') {
+        for (const p of SVG_TEXT_PROPS) {
+          const v = s.getPropertyValue(p);
+          if (v) c.setAttribute(p, v);
+        }
+      }
+      for (const [prop, op] of [['fill', 'fill-opacity'], ['stroke', 'stroke-opacity']]) {
+        const col = svgColor(s.getPropertyValue(prop), parseFloat(s.getPropertyValue(op)));
+        c.setAttribute(prop, col.v);
+        if (col.a !== undefined) c.setAttribute(op, +col.a.toFixed(3));
+      }
+      if (tag === 'stop') {
+        const col = svgColor(s.getPropertyValue('stop-color'), parseFloat(s.getPropertyValue('stop-opacity')));
+        c.setAttribute('stop-color', col.v);
+        if (col.a !== undefined) c.setAttribute('stop-opacity', +col.a.toFixed(3));
+      }
+      c.removeAttribute('class');
+      c.removeAttribute('style');
+    }
+    remove.forEach((n) => n.remove());
+    clone.querySelectorAll('style, script').forEach((n) => n.remove());
+
+    // Pull in symbols referenced from a sprite elsewhere in the document.
+    let defs = null;
+    for (const u of clone.querySelectorAll('use')) {
+      const href = u.getAttribute('href') || u.getAttribute('xlink:href') || '';
+      if (!href.startsWith('#')) continue;
+      const id = href.slice(1);
+      if ([...clone.querySelectorAll('[id]')].some((n) => n.id === id)) continue;
+      const target = doc.getElementById(id);
+      if (!target) continue;
+      if (!defs) { defs = doc.createElementNS('http://www.w3.org/2000/svg', 'defs'); clone.insertBefore(defs, clone.firstChild); }
+      defs.appendChild(target.cloneNode(true));
+    }
+
+    if (!clone.getAttribute('viewBox')) {
+      const vb = el.viewBox && el.viewBox.baseVal;
+      clone.setAttribute('viewBox', vb && vb.width ? [vb.x, vb.y, vb.width, vb.height].join(' ') : '0 0 ' + w + ' ' + h);
+    }
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function svgNode(el, base) {
+    const markup = serializeSvg(el, base.w, base.h);
+    const fallback = images.request('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup), base);
+    const label = el.getAttribute('aria-label') || (el.querySelector('title') && el.querySelector('title').textContent);
+    return Object.assign(base, { type: 'svg', svg: markup, fallback, name: label ? 'svg "' + label.trim().slice(0, 50) + '"' : base.name });
+  }
+
+  function imgNode(el, s, base) {
+    const node = Object.assign(base, { type: 'rect', isImg: true });
+    decorate(node, s, base, true);
+    const src = el.currentSrc || el.src;
+    const broken = el.complete && el.naturalWidth === 0;
+    if (src && !broken) {
+      const fit = s.objectFit;
+      node.imageId = images.request(src, base, true);
+      node.fills.push({ type: 'IMAGE', imageId: node.imageId, scaleMode: fit === 'contain' || fit === 'scale-down' ? 'FIT' : 'FILL' });
+    }
+    node.name = el.alt ? ('img "' + el.alt + '"').slice(0, 64) : 'img';
+    return node;
+  }
+
+  function mediaNode(el, s, base, tag) {
+    const node = Object.assign(base, { type: 'rect', isImg: tag !== 'iframe' && tag !== 'object' && tag !== 'embed' });
+    decorate(node, s, base, true);
+    let url = null;
+    if (tag === 'canvas') { try { url = el.toDataURL('image/png'); } catch (e) { url = null; } }
+    else if (tag === 'video') url = el.poster || null;
+    if (url) {
+      node.imageId = images.request(url, base);
+      node.fills.push({ type: 'IMAGE', imageId: node.imageId, scaleMode: tag === 'video' ? 'FIT' : 'FILL' });
+    } else if (tag === 'video') {
+      node.fills.push(solid({ r: 0.1, g: 0.1, b: 0.1, a: 1 }));
+    } else if (!node.isImg) {
+      node.fills.push(solid({ r: 0.9, g: 0.9, b: 0.9, a: 1 }));
+    }
+    node.name = tag + (el.getAttribute('title') ? ' "' + el.getAttribute('title') + '"' : '');
+    return node;
+  }
+
+  function contentBox(s, b) {
+    const n = (p) => parseFloat(s[p]) || 0;
+    return {
+      x: b.x + n('borderLeftWidth') + n('paddingLeft'),
+      y: b.y + n('borderTopWidth') + n('paddingTop'),
+      w: b.w - n('borderLeftWidth') - n('borderRightWidth') - n('paddingLeft') - n('paddingRight'),
+      h: b.h - n('borderTopWidth') - n('borderBottomWidth') - n('paddingTop') - n('paddingBottom'),
+    };
+  }
+
+  function formControl(el, s, b, node) {
+    const tag = el.localName;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    const native = s.appearance !== 'none';
+
+    if (tag === 'input' && (type === 'checkbox' || type === 'radio')) {
+      if (!native) return;
+      // The native glyph is a square centred in the (possibly stretched) box.
+      const size = Math.min(b.w, b.h);
+      Object.assign(node, { x: b.x + (b.w - size) / 2, y: b.y + (b.h - size) / 2, w: size, h: size });
+      b = { x: node.x, y: node.y, w: size, h: size };
+      const on = el.checked;
+      node.fills = [solid(on ? ACCENT : WHITE)];
+      node.stroke = { paint: solid(on ? ACCENT : { r: 0.46, g: 0.46, b: 0.46, a: 1 }), weights: [1, 1, 1, 1], dash: null };
+      const r = type === 'radio' ? Math.min(b.w, b.h) / 2 : 2.5;
+      node.radius = [r, r, r, r];
+      if (on) {
+        const mark = type === 'radio'
+          ? '<svg xmlns="http://www.w3.org/2000/svg" width="' + b.w + '" height="' + b.h + '" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.5" fill="#fff"/></svg>'
+          : '<svg xmlns="http://www.w3.org/2000/svg" width="' + b.w + '" height="' + b.h + '" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        node.children.push({ type: 'svg', name: 'check', z: [0, 0], abs: true, x: b.x, y: b.y, w: b.w, h: b.h, svg: mark });
+      }
+      return;
+    }
+    if (tag === 'input' && /^(range|color|file|image)$/.test(type)) return;
+
+    let text = '', placeholder = false;
+    const isButton = tag === 'input' && /^(button|submit|reset)$/.test(type);
+    if (tag === 'select') {
+      const o = el.options[el.selectedIndex];
+      text = o ? o.text : '';
+      if (native) {
+        const cx = b.x + b.w - 20, cy = b.y + b.h / 2 - 3;
+        node.children.push({ type: 'svg', name: 'chevron', z: [0, 0], abs: true, x: cx, y: cy, w: 10, h: 6,
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="' + svgColor(s.color).v + '" stroke-width="1.5"/></svg>' });
+      }
+    } else if (isButton) {
+      text = el.value || (type === 'submit' ? 'Submit' : type === 'reset' ? 'Reset' : '');
+    } else {
+      text = el.value;
+      if (!text) { text = el.getAttribute('placeholder') || ''; placeholder = true; }
+      else if (type === 'password') text = '•'.repeat(text.length);
+    }
+    if (!text) return;
+
+    const st = spanStyle(s, 'NONE');
+    if (placeholder) st.color = parseColor(styleOf(el, '::placeholder').color) || st.color;
+    const cb = contentBox(s, b);
+    const lh = st.lh || st.size * 1.2;
+    const t = { type: 'text', z: [0, 0], spans: [Object.assign({ text }, st)], align: TEXT_ALIGN[s.textAlign] || 'LEFT' };
+    if (tag === 'textarea') {
+      Object.assign(t, { auto: false, x: cb.x, y: cb.y, w: cb.w, h: cb.h });
+    } else {
+      const anchor = isButton ? 'CENTER' : t.align === 'CENTER' ? 'CENTER' : t.align === 'RIGHT' ? 'RIGHT' : 'LEFT';
+      Object.assign(t, { auto: true, anchor, x: cb.x, y: cb.y + (cb.h - lh) / 2, w: cb.w, h: lh });
+    }
+    node.children.push(t);
+  }
+
+  function listMarkerText(el, type) {
+    if (type === 'disc') return '•';
+    if (type === 'circle') return '◦';
+    if (type === 'square') return '▪';
+    const lit = /^["'](.*)["']$/.exec(type);
+    if (lit) return lit[1];
+    let n;
+    if (el.hasAttribute('value')) n = parseInt(el.getAttribute('value'), 10);
+    else {
+      const parent = el.parentElement;
+      n = parent && parent.hasAttribute('start') ? parseInt(parent.getAttribute('start'), 10) : 1;
+      for (let sib = el.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        if (styleOf(sib).display === 'list-item') n++;
+      }
+    }
+    const alpha = (k, upper) => {
+      let s = '';
+      while (k > 0) { k--; s = String.fromCharCode(97 + (k % 26)) + s; k = Math.floor(k / 26); }
+      return upper ? s.toUpperCase() : s;
+    };
+    const roman = (k) => {
+      const table = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+      let s = '';
+      for (const [v, r] of table) while (k >= v) { s += r; k -= v; }
+      return s;
+    };
+    let label;
+    if (/lower-(alpha|latin)/.test(type)) label = alpha(n, false);
+    else if (/upper-(alpha|latin)/.test(type)) label = alpha(n, true);
+    else if (type === 'lower-roman') label = roman(n);
+    else if (type === 'upper-roman') label = roman(n).toUpperCase();
+    else if (type === 'decimal-leading-zero') label = String(n).padStart(2, '0');
+    else if (type === 'decimal') label = String(n);
+    else return '•';
+    return label + '.';
+  }
+
+  function listMarker(el, s, b, out) {
+    if (s.display !== 'list-item' || s.listStyleType === 'none' || s.listStylePosition !== 'outside' || s.listStyleImage !== 'none') return;
+    const walker = doc.createTreeWalker(el, win.NodeFilter.SHOW_TEXT);
+    let first = null;
+    while (!first && walker.nextNode()) first = textRects(walker.currentNode)[0] || null;
+    if (!first) return;
+    const ms = styleOf(el, '::marker');
+    const st = spanStyle(ms && ms.fontSize ? ms : s, 'NONE');
+    const text = listMarkerText(el, s.listStyleType);
+    const lh = st.lh || first.height;
+    const right = b.x - st.size * 0.3;
+    out.push({ type: 'text', z: [0, 0], abs: true, auto: true, anchor: 'RIGHT', align: 'RIGHT', spans: [Object.assign({ text }, st)],
+      x: right - st.size * 4, w: st.size * 4, y: first.top + oy - (lh - first.height) / 2, h: lh });
+  }
+
+  // ---- tree walk ---------------------------------------------------------
+
+  function walkChildren(container, out, layoutEl, layoutS) {
+    let run = [];
+    const flush = () => {
+      if (!run.length) return;
+      const t = textRun(run, layoutEl, layoutS);
+      if (t) out.push(t);
+      run = [];
+    };
+    for (const c of childNodesOf(container)) {
+      if (c.nodeType === 3) { run.push(c); continue; }
+      if (c.nodeType !== 1) continue;
+      const k = inlineKind(c);
+      if (k === 'skip') continue;
+      if (k === 'text') { run.push(c); continue; }
+      flush();
+      walkElement(c, out, layoutEl, layoutS);
+    }
+    flush();
+  }
+
+  function walkElement(el, out, parentEl, parentS, suppressBackground) {
+    const tag = el.localName;
+    if (SKIP_TAGS.has(tag)) return;
+    const s = styleOf(el);
+    if (s.display === 'none') return;
+    if (s.display === 'contents') { walkChildren(el, out, parentEl, parentS); return; }
+    const opacity = parseFloat(s.opacity);
+    if (opacity <= 0.001) return;
+
+    const b = boxOf(el.getBoundingClientRect());
+    const visible = s.visibility === 'visible';
+    const base = { name: nameFor(el, tag), x: b.x, y: b.y, w: b.w, h: b.h, z: zKey(s, parentS) };
+    if (opacity < 1) base.opacity = opacity;
+    if (s.mixBlendMode && s.mixBlendMode !== 'normal') base.blend = s.mixBlendMode.toUpperCase().replace(/-/g, '_');
+    if (s.position === 'absolute' || s.position === 'fixed') base.abs = true;
+    if (parentS && /flex/.test(parentS.display) && parseFloat(s.flexGrow) > 0) base.grow = true;
+
+    const hasSize = b.w > 0.5 && b.h > 0.5;
+    if (tag === 'svg') { if (visible && hasSize) out.push(svgNode(el, base)); return; }
+    if (tag === 'img') { if (visible && hasSize) out.push(imgNode(el, s, base)); return; }
+    if (/^(canvas|video|iframe|object|embed)$/.test(tag)) { if (visible && hasSize) out.push(mediaNode(el, s, base, tag)); return; }
+
+    const node = Object.assign(base, { type: 'frame', fills: [], children: [] });
+    if (visible) decorate(node, s, b, !suppressBackground);
+    const isRoot = el === doc.body || el === doc.documentElement;
+    node.clip = !isRoot && (s.overflowX !== 'visible' || s.overflowY !== 'visible');
+    if (node.clip && !hasSize) return;
+    if (opts.autoLayout) {
+      node.css = layoutHints(s, parentS);
+      if (/px$/.test(s.maxWidth)) node.maxW = parseFloat(s.maxWidth);
+    }
+
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      if (visible) formControl(el, s, b, node);
+    } else {
+      walkChildren(el, node.children, el, s);
+    }
+    if (visible) listMarker(el, s, b, node.children);
+    node.children.sort(byZ);
+
+    const painted = node.fills.length || node.stroke || node.effects || node.opacity !== undefined || node.blend || node.clip;
+    if (!painted) {
+      if (!node.children.length) return;
+      // With auto layout, a wrapper that groups several in-flow items is a real
+      // row/column, so only pass-through wrappers are flattened.
+      const flowKids = node.children.filter((c) => !c.abs).length;
+      if (opts.flatten && !KEEP_TAGS.has(tag) && !el.id && (!opts.autoLayout || flowKids <= 1)) {
+        // Hoist children; they keep absolute coordinates. A positioned wrapper's
+        // stacking level carries over to what it contained.
+        const lift = node.z[0] >= 2 || node.z[0] < 0;
+        for (const c of node.children) {
+          if (lift) c.z = node.z;
+          if (node.abs) c.abs = true;
+          out.push(c);
+        }
+        return;
+      }
+    }
+    out.push(node);
+  }
+
+  // ---- root --------------------------------------------------------------
+
+  const html = doc.documentElement;
+  const body = doc.body;
+  const W = opts.width;
+  const H = Math.ceil(Math.max(html.scrollHeight, body ? body.scrollHeight : 0, opts.height));
+  const pageBox = { x: 0, y: 0, w: W, h: H };
+  const hs = styleOf(html);
+  let fills = backgroundPaints(hs, pageBox);
+  let bodyOnCanvas = false;
+  if (!fills.length && body) {
+    // CSS propagates the body background to the canvas when <html> has none.
+    fills = backgroundPaints(styleOf(body), pageBox);
+    bodyOnCanvas = true;
+  }
+  const opaque = fills[0] && fills[0].type === 'SOLID' && fills[0].opacity === 1;
+  if (!opaque) fills.unshift(solid(WHITE));
+
+  const root = { type: 'frame', name: 'page', x: 0, y: 0, w: W, h: H, fills, clip: true, children: [], css: { pad: [0, 0, 0, 0] } };
+  if (body) walkElement(body, root.children, html, hs, bodyOnCanvas);
+  root.children.sort(byZ);
+  if (opts.autoLayout) applyAutoLayout(root);
+  return { root, title: (doc.title || '').trim() };
+}
+
+function layoutHints(s, parentS) {
+  const n = (p) => parseFloat(s[p]) || 0;
+  const flex = /flex/.test(s.display);
+  const grid = /grid/.test(s.display);
+  const out = s.position === 'absolute' || s.position === 'fixed' || s.float !== 'none';
+  return {
+    flex,
+    dir: flex && /column/.test(s.flexDirection) ? 'column' : 'row',
+    wrap: (flex && s.flexWrap !== 'nowrap') || grid,
+    justify: flex ? s.justifyContent : '',
+    align: flex || grid ? s.alignItems : '',
+    stretch: (flex || grid) && /^(normal|stretch)$/.test(s.alignItems),
+    // Border + padding per side (top, right, bottom, left): the space CSS reserves inside the box.
+    pad: ['Top', 'Right', 'Bottom', 'Left'].map((k) => n('border' + k + 'Width') + n('padding' + k)),
+    // Sized by its content rather than its container.
+    shrink: /^inline/.test(s.display) || out || (!!parentS && /flex/.test(parentS.display) && !/column/.test(parentS.flexDirection)),
+  };
+}
+
+// ===========================================================================
+// Auto layout. Driven by the captured geometry, so whatever Figma lays out lands
+// where the browser put it; the CSS only breaks ties (direction, alignment, which
+// space is padding). A frame whose children aren't a clean row, column or wrapped
+// row keeps absolute positioning.
+
+const TOL = 1;
+const near = (a, b) => Math.abs(a - b) <= TOL;
+// Sub-pixel noise from the layout engine reads badly in Figma's panels.
+const tidy = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v) : Math.round(v * 100) / 100);
+const isBare = (n) => n.type === 'frame' && !n.fills.length && !n.stroke && !n.effects && !n.clip && n.opacity === undefined && !n.blend;
+
+function applyAutoLayout(n) {
+  if (n.type !== 'frame' || !n.children) return;
+  n.children.forEach(applyAutoLayout);
+  if (n.children.some((c) => !c.abs)) inferLayout(n);
+}
+
+// Sort along an axis; null if any two items overlap on it.
+function along(kids, p, s, q) {
+  const sorted = kids.slice().sort((a, b) => a[p] - b[p] || a[q] - b[q]);
+  let end = -Infinity;
+  for (const c of sorted) {
+    if (c[p] < end - TOL) return null;
+    end = Math.max(end, c[p] + c[s]);
+  }
+  return sorted;
+}
+
+function inferLayout(F) {
+  const css = F.css || { pad: [0, 0, 0, 0] };
+  const flow = F.children.filter((c) => !c.abs);
+  const col = along(flow, 'y', 'h', 'x');
+  const row = along(flow, 'x', 'w', 'y');
+  const tries = css.flex && css.dir === 'row' ? [['H', row], ['V', col]] : [['V', col], ['H', row]];
+  let plan = null;
+  for (const [dir, kids] of tries) if (!plan && kids) plan = planLine(F, css, dir, kids);
+  if (!plan && css.wrap) plan = planWrap(F, css, flow);
+  if (!plan) return;
+
+  // Absolute children keep their stacking relative to the flow: those painted
+  // before the first in-flow child stay below it.
+  const firstFlow = F.children.findIndex((c) => !c.abs);
+  const before = F.children.filter((c, i) => c.abs && i < firstFlow);
+  const after = F.children.filter((c, i) => c.abs && i > firstFlow);
+  F.children = before.concat(plan.kids, after);
+  F.al = plan.al;
+}
+
+function planLine(F, css, dir, kids) {
+  const V = dir === 'V';
+  const mp = V ? 'y' : 'x', ms = V ? 'h' : 'w', cp = V ? 'x' : 'y', cs = V ? 'w' : 'h';
+  const pad = css.pad;
+  const cssM0 = V ? pad[0] : pad[3], cssM1 = V ? pad[2] : pad[1];
+  const cssC0 = V ? pad[3] : pad[0], cssC1 = V ? pad[1] : pad[2];
+
+  // ---- cross axis. A line of text in a block container spans its content box.
+  // Not inside boxes shrink-wrapped to their content (badges, pills), which should keep hugging it.
+  const hugsContent = V && css.shrink && near(F.w - cssC0 - cssC1, Math.max(...kids.map((c) => c.w)));
+  const useLb = (c) => V && !hugsContent && c.type === 'text' && c.lb;
+  const ext = kids.map((c) => (useLb(c) ? { a: c.lb.x - F.x, s: c.lb.w } : { a: c[cp] - F[cp], s: c[cs] }));
+  const stretchable = (c) => (V ? c.type === 'frame' || c.type === 'rect' || (c.type === 'text' && (!c.auto || useLb(c))) : css.stretch && (c.type === 'frame' || c.type === 'rect'));
+
+  const classify = (c0, c1) => {
+    const avail = F[cs] - c0 - c1;
+    return ext.map((e, i) => {
+      const a = e.a - c0, b = avail - a - e.s;
+      const full = near(a, 0) && near(b, 0);
+      const k = kids[i];
+      return {
+        full: full && stretchable(k),
+        // A max-width box centred in its container: fill, capped at max width.
+        capped: V && !full && near(a, b) && k.type === 'frame' && k.maxW && near(k.w, k.maxW),
+        MIN: near(a, 0), CENTER: near(a, b), MAX: near(b, 0),
+      };
+    });
+  };
+  const pick = (info) => {
+    const hint = { center: 'CENTER', 'flex-end': 'MAX', end: 'MAX', 'self-end': 'MAX' }[css.align];
+    for (const cand of [hint, 'MIN', 'CENTER', 'MAX']) {
+      if (cand && info.every((x) => x.full || x[cand] || (x.capped && cand === 'CENTER'))) return cand;
+    }
+    return null;
+  };
+
+  let c0 = cssC0, c1 = cssC1;
+  let info = null, cross = null;
+  if (ext.every((e) => e.a >= c0 - TOL && F[cs] - e.a - e.s >= c1 - TOL)) {
+    info = classify(c0, c1);
+    cross = pick(info);
+  }
+  if (!cross) {
+    c0 = Math.min(...ext.map((e) => e.a));
+    c1 = Math.min(...ext.map((e) => F[cs] - e.a - e.s));
+    if (c0 < -TOL || c1 < -TOL) return null;
+    c0 = Math.max(0, c0); c1 = Math.max(0, c1);
+    info = classify(c0, c1);
+    cross = pick(info);
+    if (!cross) return null;
+  }
+
+  // ---- main axis
+  const first = kids[0], last = kids[kids.length - 1];
+  const start = first[mp] - F[mp];
+  const end = F[mp] + F[ms] - (last[mp] + last[ms]);
+  if (start < -TOL || end < -TOL) return null;
+  const gaps = kids.slice(1).map((c, i) => Math.max(0, c[mp] - (kids[i][mp] + kids[i][ms])));
+  const minGap = gaps.length ? Math.min(...gaps) : 0;
+  const uniform = gaps.every((g) => near(g, minGap));
+
+  let main = 'MIN', m0 = start, m1 = Math.max(0, end), hugMain = true, gap = minGap;
+  const j = css.justify || '';
+  if (j === 'center' && kids.length) {
+    // Centred, but margins can make it lopsided: put the difference into padding.
+    const d = (start - cssM0) - (end - cssM1);
+    main = 'CENTER'; hugMain = false;
+    m0 = cssM0 + Math.max(0, d); m1 = Math.max(0, cssM1 - Math.min(0, d));
+  } else if (/(^|-)end$/.test(j)) { main = 'MAX'; m0 = Math.min(start, cssM0); hugMain = false; }
+  else if (j === 'space-between' && kids.length > 1 && uniform) { main = 'SPACE_BETWEEN'; hugMain = false; gap = 0; }
+  else if (!V && !near(end, cssM1)) { m1 = Math.max(0, Math.min(end, cssM1)); hugMain = false; }
+
+  // flex-grow → fill, when Figma's equal split reproduces the sizes.
+  const growers = css.flex ? kids.filter((c) => c.grow) : [];
+  const grow = growers.length > 0 && growers.every((c) => near(c[ms], growers[0][ms]));
+  if (grow) hugMain = false;
+
+  // ---- commit
+  const stretch = info.map((x) => x.full || (x.capped && cross === 'CENTER'));
+  let hugCross = !stretch.some(Boolean) && near(c0 + Math.max(...ext.map((e) => e.s)) + c1, F[cs]) && (!V || css.shrink);
+  kids.forEach((c, i) => {
+    if (useLb(c)) {
+      Object.assign(c, { auto: false, x: c.lb.x, w: c.lb.w });
+      delete c.anchor;
+    }
+    c.lay = {};
+    if (stretch[i]) c.lay.stretch = true;
+    if (info[i].capped && cross === 'CENTER') c.lay.maxW = c.maxW;
+    if (grow && c.grow) c.lay.grow = true;
+  });
+
+  // Uneven spacing (CSS margins): the extra goes into a neighbouring transparent
+  // frame's padding, or failing that, a transparent "margin" wrapper.
+  let out = kids;
+  if (main !== 'SPACE_BETWEEN' && !uniform) {
+    out = [kids[0]];
+    for (let i = 1; i < kids.length; i++) {
+      let c = kids[i];
+      const extra = gaps[i - 1] - gap;
+      if (extra > TOL) {
+        const prev = out[out.length - 1];
+        if (isBare(prev)) growBox(prev, V, extra, false);
+        else if (isBare(c)) growBox(c, V, extra, true);
+        else c = marginWrap(c, V, extra);
+      }
+      out.push(c);
+    }
+  }
+
+  const p = (V ? [m0, c1, m1, c0] : [c0, m1, c1, m0]).map((v) => tidy(Math.max(0, v)));
+  return {
+    kids: out,
+    al: { dir, pad: p, gap: tidy(gap), main, cross, hugMain, hugCross },
+  };
+}
+
+// Extend a transparent frame by `extra` on its leading or trailing side.
+function growBox(n, V, extra, leading) {
+  if (V) { n.h += extra; if (leading) n.y -= extra; } else { n.w += extra; if (leading) n.x -= extra; }
+  if (n.al) {
+    const i = V ? (leading ? 0 : 2) : (leading ? 3 : 1);
+    n.al.pad[i] = tidy(n.al.pad[i] + extra);
+  }
+}
+
+function marginWrap(c, V, extra) {
+  const w = { type: 'frame', name: 'margin', fills: [], z: c.z, x: c.x, y: c.y, w: c.w, h: c.h, children: [c],
+    css: { flex: true, dir: V ? 'column' : 'row', pad: [0, 0, 0, 0], stretch: true, shrink: true } };
+  if (c.lay) { w.lay = c.lay; c.lay = {}; }
+  if (c.grow) w.grow = true;
+  growBox(w, V, extra, true);
+  inferLayout(w);
+  return w;
+}
+
+// flex-wrap / grid with several lines → a wrapping row.
+function planWrap(F, css, kids) {
+  const lines = [];
+  for (const c of kids.slice().sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const line = lines[lines.length - 1];
+    if (line && c.y < line.bottom - TOL) { line.items.push(c); line.bottom = Math.max(line.bottom, c.y + c.h); }
+    else lines.push({ top: c.y, bottom: c.y + c.h, items: [c] });
+  }
+  if (lines.length < 2) return null;
+  const left = Math.min(...kids.map((c) => c.x)) - F.x;
+  const rightEdge = Math.max(...kids.map((c) => c.x + c.w));
+  const right = F.x + F.w - rightEdge >= css.pad[1] - TOL ? css.pad[1] : F.x + F.w - rightEdge;
+  if (left < -TOL || right < -TOL) return null;
+  const avail = F.w - left - Math.max(0, right);
+  let gap = null, cgap = null;
+  const widths = [];
+  for (let i = 0; i < lines.length; i++) {
+    const L = lines[i];
+    const items = along(L.items, 'x', 'w', 'y');
+    if (!items || !near(items[0].x - F.x, left)) return null;
+    for (let k = 1; k < items.length; k++) {
+      const g = items[k].x - (items[k - 1].x + items[k - 1].w);
+      if (gap === null) gap = g;
+      else if (!near(g, gap)) return null;
+    }
+    if (items.some((c) => !near(c.y, L.top))) return null;
+    if (i > 0) {
+      const g = L.top - lines[i - 1].bottom;
+      if (g < -TOL || (cgap !== null && !near(g, cgap))) return null;
+      cgap = g;
+    }
+    L.items = items;
+    widths.push(items[items.length - 1].x + items[items.length - 1].w - items[0].x);
+  }
+  gap = Math.max(0, gap || 0);
+  // Figma must break the lines in the same places.
+  for (let i = 0; i < lines.length; i++) {
+    if (widths[i] > avail + TOL) return null;
+    if (i < lines.length - 1 && widths[i] + gap + lines[i + 1].items[0].w <= avail - TOL) return null;
+  }
+  const top = lines[0].top - F.y;
+  const bottom = F.y + F.h - lines[lines.length - 1].bottom;
+  if (top < -TOL || bottom < -TOL) return null;
+  const out = [];
+  for (const L of lines) for (const c of L.items) { c.lay = {}; out.push(c); }
+  return {
+    kids: out,
+    al: { dir: 'H', wrap: true, pad: [top, right, bottom, left].map((v) => tidy(Math.max(0, v))), gap: tidy(gap), cgap: tidy(Math.max(0, cgap)), main: 'MIN', cross: 'MIN', hugMain: false, hugCross: true },
+  };
+}
+
+// ===========================================================================
+// Images: fetch bytes, rasterise anything Figma can't take directly.
+
+function sniff(head) {
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'png';
+  if (head[0] === 0xff && head[1] === 0xd8) return 'jpeg';
+  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return 'gif';
+  return null;
+}
+
+async function toPng(canvas) {
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+async function rasterizeSvg(text, e) {
+  // Give the SVG an explicit size so it rasterises crisply at 2× its largest use.
+  const svgDoc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const svg = svgDoc.documentElement;
+  if (svg.localName !== 'svg') throw new Error('bad svg');
+  const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+  let w = parseFloat(svg.getAttribute('width')) || vb[2] || e.w || 300;
+  let h = parseFloat(svg.getAttribute('height')) || vb[3] || e.h || 150;
+  if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+  const target = Math.max(e.w, e.h) * 2;
+  if (target > 0) { const k = target / Math.max(w, h); w *= k; h *= k; }
+  const k = Math.min(1, 4096 / Math.max(w, h));
+  w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  const img = new Image();
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return toPng(c);
+}
+
+async function rasterizeBitmap(blob) {
+  const bmp = await createImageBitmap(blob);
+  const k = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * k));
+  c.height = Math.max(1, Math.round(bmp.height * k));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  return toPng(c);
+}
+
+async function resolveImage(e) {
+  let blob;
+  try {
+    const res = await fetch(e.url);
+    if (!res.ok) throw new Error(res.status);
+    blob = await res.blob();
+  } catch (err) {
+    // Probably CORS — let Figma try fetching it itself.
+    return /^https?:/i.test(e.url) ? { url: e.url } : {};
+  }
+  const head = new Uint8Array(await blob.slice(0, 1024).arrayBuffer());
+  if (/svg/.test(blob.type) || /<svg[\s>]/i.test(utf8.decode(head))) {
+    const text = await blob.text();
+    const out = {};
+    try { out.bytes = await rasterizeSvg(text, e); } catch (err) { /* vector-only */ }
+    if (e.svg) out.svg = text;
+    return out;
+  }
+  if (sniff(head)) {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const fits = Math.max(bmp.width, bmp.height) <= 4096;
+      bmp.close();
+      if (fits) return { bytes: new Uint8Array(await blob.arrayBuffer()) };
+    } catch (err) { /* fall through to re-encode */ }
+  }
+  try { return { bytes: await rasterizeBitmap(blob) }; } catch (err) { return {}; }
+}
+
+async function pool(items, limit, fn) {
+  let i = 0;
+  const worker = async () => { while (i < items.length) { const item = items[i++]; await fn(item); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+// ===========================================================================
+// Import flow
+
+function readWidths() {
+  const ws = [...document.querySelectorAll('.chip.on')].map((c) => +c.dataset.w);
+  for (const t of $('customW').value.split(/[,\s]+/)) {
+    const n = parseInt(t, 10);
+    if (n >= 200 && n <= 4000) ws.push(n);
+  }
+  return [...new Set(ws)].sort((a, b) => b - a);
+}
+
+const heightFor = (w) => (w >= 1024 ? 900 : w >= 600 ? 1024 : 844);
+
+async function runImport() {
+  const widths = readWidths();
+  const entries = state.htmls.filter((h) => h.checked);
+  if (!widths.length) return logLine('Pick at least one viewport width.', 'warn');
+  if (!entries.length) return logLine('Pick at least one HTML page.', 'warn');
+
+  const opts = {
+    scripts: $('optScripts').checked,
+    flatten: $('optFlatten').checked,
+    autoLayout: $('optAutoLayout').checked,
+    wait: Math.max(0, parseInt($('optWait').value, 10) || 0),
+  };
+  setBusy(true);
+  $('log').innerHTML = '';
+  const images = makeImageRegistry();
+  const pages = [];
+  try {
+    const jobs = entries.length * widths.length;
+    let done = 0;
+    for (const entry of entries) {
+      const html = prepareHtml(entry);
+      const fileLabel = entry.path.split('/').pop().replace(/\.html?$/i, '');
+      for (const width of widths) {
+        setStatus('Rendering ' + entry.path + ' at ' + width + 'px…', done / jobs * 0.5);
+        const height = heightFor(width);
+        const frame = await renderInIframe(html, width, height, opts);
+        try {
+          const { root, title } = capturePage(frame.contentWindow, Object.assign({ width, height }, opts), images);
+          pages.push({ name: (title || fileLabel) + ' — ' + width, root });
+        } finally {
+          frame.remove();
+        }
+        done++;
+      }
+    }
+
+    const resolved = {};
+    let n = 0;
+    await pool(images.list, 6, async (e) => {
+      resolved[e.id] = await resolveImage(e).catch(() => ({}));
+      n++;
+      setStatus('Fetching images… ' + n + ' / ' + images.list.length, 0.5 + (n / images.list.length) * 0.2);
+    });
+
+    setStatus('Sending to Figma…', 0.7);
+    parent.postMessage({
+      pluginMessage: {
+        type: 'import',
+        pages,
+        images: resolved,
+        options: { newPage: $('optNewPage').checked, pageName: state.name.replace(/\.(zip|html?)$/i, '') },
+      },
+    }, '*');
+  } catch (err) {
+    console.error(err);
+    logLine('Import failed: ' + (err && err.message || err), 'err');
+    setBusy(false);
+  }
+}
+
+// ===========================================================================
+// UI wiring
+
+function setBusy(busy) {
+  $('go').disabled = busy || !state.htmls.length;
+  $('status').hidden = !busy;
+  if (!busy) $('barFill').style.width = '0';
+}
+
+function setStatus(text, frac) {
+  $('status').hidden = false;
+  $('statusText').textContent = text;
+  if (frac != null) $('barFill').style.width = Math.round(frac * 100) + '%';
+}
+
+function logLine(text, cls) {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = text;
+  $('log').appendChild(d);
+}
+
+function renderSource() {
+  const has = state.htmls.length > 0;
+  $('source').hidden = !state.name;
+  $('drop').hidden = !!state.name;
+  $('sourceName').textContent = state.name;
+  const pages = $('pages');
+  pages.innerHTML = '';
+  if (state.name && !has) {
+    pages.innerHTML = '<div class="hint">No .html files found.</div>';
+  } else if (state.files) {
+    for (const h of state.htmls) {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = h.checked;
+      cb.onchange = () => { h.checked = cb.checked; };
+      label.append(cb, document.createTextNode(h.path));
+      label.title = h.path;
+      pages.appendChild(label);
+    }
+  } else if (has) {
+    pages.innerHTML = '<div class="hint">Single file — relative images/CSS won’t resolve. Use a ZIP or folder to include assets.</div>';
+  }
+  $('go').disabled = !has;
+}
+
+async function loadFiles(fileList) {
+  const list = [...fileList].filter((f) => !/(^|\/)(node_modules|\.git)\//.test(f.webkitRelativePath || ''));
+  if (!list.length) return;
+  $('log').innerHTML = '';
+  dataUrlCache.clear();
+  try {
+    const one = list.length === 1 ? list[0] : null;
+    if (one && /\.zip$/i.test(one.name)) {
+      setStatus('Unzipping…', 0);
+      setFileSet(one.name, await unzip(await one.arrayBuffer()));
+    } else if (one && /\.html?$/i.test(one.name)) {
+      Object.assign(state, { name: one.name, files: null, lower: null, htmls: [{ path: one.name, text: await one.text(), checked: true }] });
+    } else {
+      const files = new Map();
+      for (const f of list) files.set(f.webkitRelativePath || f.name, new Uint8Array(await f.arrayBuffer()));
+      const root = (list[0].webkitRelativePath || '').split('/')[0] || list.length + ' files';
+      setFileSet(root, files);
+    }
+  } catch (err) {
+    logLine(err.message || String(err), 'err');
+  }
+  $('status').hidden = true;
+  renderSource();
+}
+
+$('pickFile').onclick = (e) => { e.stopPropagation(); $('fileInput').click(); };
+$('pickFolder').onclick = (e) => { e.stopPropagation(); $('folderInput').click(); };
+$('drop').onclick = () => $('fileInput').click();
+$('fileInput').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
+$('folderInput').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
+$('clear').onclick = () => {
+  Object.assign(state, { name: '', files: null, lower: null, htmls: [] });
+  $('log').innerHTML = '';
+  renderSource();
+};
+$('chips').onclick = (e) => { if (e.target.classList.contains('chip')) e.target.classList.toggle('on'); };
+$('go').onclick = runImport;
+
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+document.addEventListener('drop', (e) => { if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
+
+window.onmessage = (e) => {
+  const msg = e.data && e.data.pluginMessage;
+  if (!msg) return;
+  if (msg.type === 'progress') {
+    setStatus(msg.text, msg.frac != null ? 0.7 + msg.frac * 0.3 : null);
+  } else if (msg.type === 'done') {
+    setBusy(false);
+    logLine('Done — ' + msg.frames + ' frame' + (msg.frames === 1 ? '' : 's') + ', ' + msg.nodes + ' layers.');
+    if (msg.missingFonts.length) logLine('Fonts not available in Figma (substituted): ' + msg.missingFonts.join(', '), 'warn');
+    if (msg.failedImages) logLine(msg.failedImages + ' image' + (msg.failedImages === 1 ? '' : 's') + ' could not be loaded (grey placeholders).', 'warn');
+  } else if (msg.type === 'error') {
+    setBusy(false);
+    logLine('Figma error: ' + msg.message, 'err');
+  }
+};
+
+renderSource();
+</script>
+</body>
+</html>
